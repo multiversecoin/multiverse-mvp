@@ -78,9 +78,21 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-20">
       {renderView()}
       <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
+      {/* Footer com Logo e Copyright */}
+      <div className="fixed bottom-0 left-0 right-0 bg-gray-50 border-t border-gray-200 py-2 px-4 z-40">
+        <div className="max-w-lg mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
+              <span className="text-white text-xs font-bold">M</span>
+            </div>
+            <span className="text-xs text-gray-600 font-medium">MULTIVERSE</span>
+          </div>
+          <span className="text-xs text-gray-400">© 2026 Todos os direitos reservados.</span>
+        </div>
+      </div>
     </div>
   )
 }
