@@ -78,7 +78,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="min-h-screen bg-gray-50 pb-32">
       {renderView()}
       <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
       {/* Footer com Logo e Copyright */}
