@@ -1,0 +1,35 @@
+<svg width="400" height="450" viewBox="0 0 400 450" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="400" height="450" fill="#0A2540"/>
+
+  <!-- Orbit Circle -->
+  <circle cx="200" cy="180" r="120" stroke="#3B82F6" stroke-width="3" fill="none"/>
+
+  <!-- Sphere on orbit -->
+  <circle cx="320" cy="180" r="15" fill="#3B82F6">
+    <animate attributeName="cx" values="320;80;320" dur="4s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Glow effect for sphere -->
+  <circle cx="320" cy="180" r="25" fill="rgba(59, 130, 246, 0.3)">
+    <animate attributeName="cx" values="320;80;320" dur="4s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- M Logo -->
+  <text x="200" y="220" font-family="Arial, sans-serif" font-size="100" font-weight="bold" fill="#3B82F6" text-anchor="middle">
+    M
+  </text>
+
+  <!-- Brand Name -->
+  <text x="200" y="320" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#ffffff" text-anchor="middle" letter-spacing="4">
+    MULTIVERSE COIN
+  </text>
+
+  <!-- Copyright -->
+  <text x="200" y="380" font-family="Arial, sans-serif" font-size="14" fill="#64748b" text-anchor="middle" letter-spacing="1">
+    © 2026 Todos os direitos reservados.
+  </text>
+
+  <!-- Decorative lines -->
+  <line x1="100" y1="340" x2="300" y2="340" stroke="#3B82F6" stroke-width="1" opacity="0.5"/>
+</svg>
