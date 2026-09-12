@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiverse - Economia Digital Territorial</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        multiverse: {
+                            primary: '#0A2540',
+                            secondary: '#1E3A5F',
+                            accent: '#3B82F6',
+                            gold: '#F59E0B',
+                            success: '#10B981',
+                            danger: '#EF4444',
+                            warning: '#F59E0B',
+                        },
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="app"></div>
+
+    <script>
+        // ============================================
+        // SECURITY GUARDRAILS - Proteção contra prompts maliciosos
+        // ============================================
+
+        const SecurityConfig = {
+            rateLimits: {
+                transactions: {
+                    maxPerHour: 10,
+                    maxPerDay: 50,
+                    cooldownMs: 30000 // 30 segundos
+                },
+                loginAttempts: {
+                    maxAttempts: 5,
+                    lockoutMs: 300000 // 5 minutos
+                }
+            },
+            transactionLimits: {
+                maxSingleTransaction: 10000,
+                maxDailyTotal: 50000,
+                minTransaction: 0.01,
+                requireConfirmationAbove: 100
+            }
+        };
+
+        let SecurityState = {
+            transactionHistory: [],
+            lastTransactionTime: 0,
+            failedAttempts: 0,
+            lockoutUntil: null,
+            suspiciousActivityDetected: false
+        };
+
+        // Sanitização de input contra XSS
+        function sanitizeInput(input) {
+            if (typeof input !== 'string') return '';
+            return input
+                .replace(/[<>]/g, '')
+                .replace(/javascript:/gi, '')
+                .replace(/on\w+\s*=/gi, '')
+                .replace(/data:/gi, '')
+                .replace(/vbscript:/gi, '')
+                .trim()
+                .substring(0, 1000);
+        }
+
+        // Validação de valor
+        function validateAmount(amount) {
+            if (typeof amount !== 'number' || isNaN(amount)) {
+                return { valid: false, error: 'Valor inválido' };
+            }
+            if (amount < SecurityConfig.transactionLimits.minTransaction) {
+                return { valid: false, error: `Valor mínimo é ${SecurityConfig.transactionLimits.minTransaction} MCC` };
+            }
+            if (amount > SecurityConfig.transactionLimits.maxSingleTransaction) {
+                return { valid: false, error: `Valor máximo é ${SecurityConfig.transactionLimits.maxSingleTransaction} MCC` };
+            }
+            if (amount <= 0) {
+                return { valid: false, error: 'Valor deve ser positivo' };
+            }
+            return { valid: true };
+        }
+
+        // Rate limiting
+        function checkRateLimit() {
+            const now = Date.now();
+
+            if (SecurityState.lockoutUntil && now < SecurityState.lockoutUntil) {
+                const waitTime = Math.ceil((SecurityState.lockoutUntil - now) / 1000);
+                return {
+                    allowed: false,
+                    error: 'Muitas tentativas. Tente novamente mais tarde.',
+                    waitTime
+                };
+            }
+
+            if (SecurityState.lastTransactionTime) {
+                const timeSinceLastTransaction = now - SecurityState.lastTransactionTime;
+                if (timeSinceLastTransaction < SecurityConfig.rateLimits.transactions.cooldownMs) {
+                    const waitTime = Math.ceil((SecurityConfig.rateLimits.transactions.cooldownMs - timeSinceLastTransaction) / 1000);
+                    return {
+                        allowed: false,
+                        error: 'Aguarde antes de fazer outra transação.',
+                        waitTime
+                    };
+                }
+            }
+
+            const oneHourAgo = now - 3600000;
+            const recentTransactions = SecurityState.transactionHistory.filter(
+                timestamp => timestamp > oneHourAgo
+            );
+
+            if (recentTransactions.length >= SecurityConfig.rateLimits.transactions.maxPerHour) {
+                return {
+                    allowed: false,
+                    error: 'Limite de transações por hora atingido.'
+                };
+            }
+
+            return { allowed: true };
+        }
+
+        // Registrar transação
+        function recordTransaction() {
+            const now = Date.now();
+            SecurityState.transactionHistory.push(now);
+            SecurityState.lastTransactionTime = now;
+            SecurityState.failedAttempts = 0;
+        }
+
+        // Registrar falha
+        function recordFailedAttempt() {
+            SecurityState.failedAttempts++;
+            if (SecurityState.failedAttempts >= SecurityConfig.rateLimits.loginAttempts.maxAttempts) {
+                SecurityState.lockoutUntil = Date.now() + SecurityConfig.rateLimits.loginAttempts.lockoutMs;
+                SecurityState.suspiciousActivityDetected = true;
+            }
+        }
+
+        // Validar merchant ID
+        function validateMerchantId(merchantId) {
+            if (typeof merchantId !== 'string') {
+                return { valid: false, error: 'ID de estabelecimento inválido' };
+            }
+            const sanitized = sanitizeInput(merchantId);
+            if (!/^[a-zA-Z0-9-_]+$/.test(sanitized)) {
+                return { valid: false, error: 'ID de estabelecimento contém caracteres inválidos' };
+            }
+            if (sanitized.length > 50 || sanitized.length < 1) {
+                return { valid: false, error: 'ID de estabelecimento com tamanho inválido' };
+            }
+            return { valid: true };
+        }
+
+        // Detecção de atividade suspeita
+        function detectSuspiciousActivity(pattern) {
+            const { amount, frequency, timeOfDay } = pattern;
+
+            if (amount > SecurityConfig.transactionLimits.maxSingleTransaction * 0.8) {
+                return { suspicious: true, reason: 'Valor acima do normal' };
+            }
+
+            if (frequency > SecurityConfig.rateLimits.transactions.maxPerHour * 0.5) {
+                return { suspicious: true, reason: 'Alta frequência de transações' };
+            }
+
+            if (timeOfDay >= 2 && timeOfDay <= 5) {
+                return { suspicious: true, reason: 'Horário incomum' };
+            }
+
+            return { suspicious: false };
+        }
+
+        // Validação completa de transação
+        function validateTransactionRequest(request) {
+            const merchantValidation = validateMerchantId(request.merchantId);
+            if (!merchantValidation.valid) {
+                return { valid: false, error: merchantValidation.error };
+            }
+
+            const amountValidation = validateAmount(request.amount);
+            if (!amountValidation.valid) {
+                return { valid: false, error: amountValidation.error };
+            }
+
+            const rateLimitCheck = checkRateLimit();
+            if (!rateLimitCheck.allowed) {
+                return { valid: false, error: rateLimitCheck.error };
+            }
+
+            const now = new Date();
+            const suspiciousCheck = detectSuspiciousActivity({
+                amount: request.amount,
+                frequency: SecurityState.transactionHistory.filter(
+                    t => t > Date.now() - 3600000
+                ).length,
+                timeOfDay: now.getHours()
+            });
+
+            if (suspiciousCheck.suspicious) {
+                console.log('[SECURITY] Atividade suspeita detectada:', suspiciousCheck.reason);
+            }
+
+            const needsConfirmation = request.amount >= SecurityConfig.transactionLimits.requireConfirmationAbove;
+
+            return {
+                valid: true,
+                requiresConfirmation: needsConfirmation,
+                suspicious: suspiciousCheck.suspicious,
+                reason: suspiciousCheck.reason
+            };
+        }
+
+        // Gerar token seguro
+        function generateSecureToken() {
+            const array = new Uint32Array(4);
+            crypto.getRandomValues(array);
+            return Array.from(array, dec => dec.toString(16)).join('');
+        }
+
+        // Obter status de segurança
+        function getSecurityStatus() {
+            const now = Date.now();
+            const lockoutRemaining = SecurityState.lockoutUntil
+                ? Math.max(0, SecurityState.lockoutUntil - now)
+                : 0;
+
+            return {
+                isLocked: lockoutRemaining > 0,
+                suspiciousActivity: SecurityState.suspiciousActivityDetected,
+                failedAttempts: SecurityState.failedAttempts,
+                lockoutRemaining
+            };
+        }
+
+        // ============================================
+        // FIM DOS SECURITY GUARDRAILS
+        // ============================================
+
+        // Demo Data
+        const demoUser = {
+            id: "1",
+            name: "Lucas",
+            territory: "Moema, São Paulo",
+            balance: 2458.75,
+            impact: 18.42,
+            level: "Ouro"
+        };
+
+        const demoMerchants = [
+            {
+                id: "1",
+                name: "Café Aurora",
+                category: "cafés",
+                image: "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400&h=300&fit=crop",
+                distance: "350 m",
+                benefit: "5% cashback",
+                cashback: 5,
+                hours: "07:00 - 22:30",
+                isOpen: true,
+                description: "Café especialista em grãos brasileiros com ambiente acolhedor.",
+                isSupportPoint: true
+            },
+            {
+                id: "2",
+                name: "Restaurante Vila Madalena",
+                category: "restaurantes",
+                image: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400&h=300&fit=crop",
+                distance: "800 m",
+                benefit: "3% cashback",
+                cashback: 3,
+                hours: "11:30 - 23:00",
+                isOpen: true,
+                description: "Comida contemporânea brasileira com ingredientes locais."
+            },
+            {
+                id: "3",
+                name: "Mercado do Bairro",
+                category: "mercados",
+                image: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=400&h=300&fit=crop",
+                distance: "200 m",
+                benefit: "2% cashback",
+                cashback: 2,
+                hours: "08:00 - 20:00",
+                isOpen: true,
+                description: "Supermercado com produtos frescos e itens de mercearia."
+            },
+            {
+                id: "4",
+                name: "Padaria Central",
+                category: "padarias",
+                image: "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&h=300&fit=crop",
+                distance: "150 m",
+                benefit: "4% cashback",
+                cashback: 4,
+                hours: "06:00 - 20:00",
+                isOpen: true,
+                description: "Pães artesanais e doces tradicionais feitos diariamente."
+            },
+            {
+                id: "5",
+                name: "Studio Beleza",
+                category: "beleza",
+                image: "https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400&h=300&fit=crop",
+                distance: "600 m",
+                benefit: "6% cashback",
+                cashback: 6,
+                hours: "09:00 - 19:00",
+                isOpen: true,
+                description: "Salão de beleza completo com serviços de cabelo e estética."
+            }
+        ];
+
+        const demoOffers = [
+            {
+                id: "1",
+                merchantId: "1",
+                title: "Café Expresso + Bolo",
+                description: "Combo especial para começar o dia",
+                discount: 15,
+                cashback: 5,
+                originalPrice: 25.00,
+                finalPrice: 21.25
+            },
+            {
+                id: "2",
+                merchantId: "2",
+                title: "Almoço Executivo",
+                description: "Prato do dia com bebida inclusa",
+                discount: 20,
+                cashback: 3,
+                originalPrice: 45.00,
+                finalPrice: 36.00
+            }
+        ];
+
+        const demoTransactions = [
+            {
+                id: "1",
+                merchantId: "1",
+                merchantName: "Café Aurora",
+                amount: 18.50,
+                cashback: 0.93,
+                impact: 0.09,
+                date: new Date("2026-09-12T09:30:00"),
+                type: "purchase"
+            },
+            {
+                id: "2",
+                merchantId: "4",
+                merchantName: "Padaria Central",
+                amount: 12.00,
+                cashback: 0.48,
+                impact: 0.06,
+                date: new Date("2026-09-12T07:15:00"),
+                type: "purchase"
+            }
+        ];
+
+        const demoImpactData = {
+            myImpact: 18.42,
+            communityImpact: 12450.00,
+            familiesImpacted: 17,
+            categories: [
+                { name: "Alimentação", amount: 5.50, percentage: 30 },
+                { name: "Educação", amount: 4.20, percentage: 23 },
+                { name: "Infância", amount: 3.70, percentage: 20 },
+                { name: "Idosos", amount: 2.80, percentage: 15 },
+                { name: "Empregabilidade", amount: 2.22, percentage: 12 }
+            ]
+        };
+
+        const demoSafetyAreas = [
+            {
+                id: "1",
+                name: "Rua dos Pinheiros/Moaci",
+                riskLevel: "medium",
+                incidents: 6
+            },
+            {
+                id: "2",
+                name: "Av. Ibirapuera (trecho norte)",
+                riskLevel: "low",
+                incidents: 3
+            }
+        ];
+
+        const demoSupportPoints = [
+            {
+                id: "1",
+                merchantId: "1",
+                name: "Café Aurora",
+                type: "Ponto de Apoio",
+                hours: "07:00 - 22:30",
+                distance: "350 m"
+            },
+            {
+                id: "2",
+                merchantId: "4",
+                name: "Padaria Central",
+                type: "Ponto de Apoio",
+                hours: "06:00 - 20:00",
+                distance: "150 m"
+            }
+        ];
+
+        // State
+        let currentView = 'home';
+        let selectedMerchant = null;
+        let user = { ...demoUser };
+        let transactions = [...demoTransactions];
+
+        // Icons (using emoji for simplicity)
+        const icons = {
+            home: '🏠',
+            explore: '🔍',
+            impact: '❤️',
+            safety: '🛡️',
+            wallet: '💼',
+            mapPin: '📍',
+            clock: '🕐',
+            star: '⭐',
+            bell: '🔔',
+            trendingUp: '📈',
+            shield: '🛡️',
+            arrowRight: '→',
+            arrowLeft: '←',
+            check: '✓',
+            shoppingBag: '🛍️',
+            users: '👥',
+            heart: '❤️',
+            alertTriangle: '⚠️',
+            checkCircle: '✓'
+        };
+
+        // Render functions
+        function render() {
+            const app = document.getElementById('app');
+            app.innerHTML = `
+                <div class="min-h-screen bg-gradient-to-b from-slate-50 to-white pb-20">
+                    ${renderCurrentView()}
+                </div>
+                ${renderNavigation()}
+            `;
+            attachEventListeners();
+        }
+
+        function renderCurrentView() {
+            switch(currentView) {
+                case 'home': return renderHome();
+                case 'explore': return renderExplore();
+                case 'merchant': return renderMerchantDetail();
+                case 'impact': return renderImpact();
+                case 'safety': return renderSafety();
+                case 'wallet': return renderWallet();
+                default: return renderHome();
+            }
+        }
+
+        function renderHome() {
+            const nearbyMerchants = demoMerchants.slice(0, 3);
+            return `
+                <div class="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-6 rounded-b-3xl">
+                    <div class="flex justify-between items-start mb-6">
+                        <div>
+                            <p class="text-blue-200 text-sm">Bem-vindo de volta</p>
+                            <h1 class="text-2xl font-bold">Olá, ${user.name}</h1>
+                        </div>
+                        <button class="p-2 bg-blue-800 rounded-full hover:bg-blue-700 transition-colors">
+                            ${icons.bell}
+                        </button>
+                    </div>
+
+                    <div class="flex items-center space-x-2 text-blue-200 mb-6">
+                        ${icons.mapPin}
+                        <span class="text-sm">${user.territory}</span>
+                    </div>
+
+                    <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-4 mb-4">
+                        <p class="text-blue-200 text-sm mb-1">Saldo disponível</p>
+                        <div class="flex items-baseline space-x-2">
+                            <span class="text-3xl font-bold">${user.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            <span class="text-lg">MCC</span>
+                        </div>
+                        <p class="text-blue-200 text-sm mt-1">≈ R$ ${(user.balance * 10).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-green-500/20 backdrop-blur-sm rounded-xl p-4">
+                            <div class="flex items-center space-x-2 mb-2">
+                                ${icons.trendingUp}
+                                <span class="text-green-200 text-sm">Impacto</span>
+                            </div>
+                            <p class="text-xl font-bold text-white">R$ ${user.impact.toFixed(2)}</p>
+                            <p class="text-green-200 text-xs">gerados</p>
+                        </div>
+
+                        <div class="bg-blue-500/20 backdrop-blur-sm rounded-xl p-4">
+                            <div class="flex items-center space-x-2 mb-2">
+                                ${icons.shield}
+                                <span class="text-blue-200 text-sm">Nível</span>
+                            </div>
+                            <p class="text-xl font-bold text-white">${user.level}</p>
+                            <p class="text-blue-200 text-xs">comunidade</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="px-4 py-6">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Ações rápidas</h2>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button onclick="navigate('explore')" class="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                    ${icons.mapPin}
+                                </div>
+                                <div class="text-left">
+                                    <p class="font-medium text-gray-900">Explorar</p>
+                                    <p class="text-xs text-gray-500">Comércio local</p>
+                                </div>
+                            </div>
+                        </button>
+
+                        <button onclick="navigate('safety')" class="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                                    ${icons.shield}
+                                </div>
+                                <div class="text-left">
+                                    <p class="font-medium text-gray-900">Segurança</p>
+                                    <p class="text-xs text-gray-500">Mapa do território</p>
+                                </div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="px-4 py-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold text-gray-900">Próximos a você</h2>
+                        <button onclick="navigate('explore')" class="text-blue-600 text-sm font-medium flex items-center space-x-1 hover:text-blue-700">
+                            <span>Ver todos</span>
+                            ${icons.arrowRight}
+                        </button>
+                    </div>
+
+                    <div class="space-y-3">
+                        ${nearbyMerchants.map(merchant => `
+                            <div class="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100">
+                                <div class="flex items-start space-x-3">
+                                    <div class="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                                        <img src="${merchant.image}" alt="${merchant.name}" class="w-full h-full object-cover" />
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <h3 class="font-medium text-gray-900 truncate">${merchant.name}</h3>
+                                        <p class="text-sm text-gray-500 capitalize">${merchant.category}</p>
+                                        <div class="flex items-center space-x-2 mt-2">
+                                            <span class="text-xs text-gray-400">${merchant.distance}</span>
+                                            <span class="text-xs text-green-600 font-medium">${merchant.benefit}</span>
+                                        </div>
+                                    </div>
+                                    ${merchant.isSupportPoint ? `
+                                        <div class="flex-shrink-0">
+                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                Ponto de Apoio
+                                            </span>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="px-4 py-4">
+                    <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
+                        <div class="flex items-center justify-between mb-3">
+                            <h2 class="text-lg font-semibold text-gray-900">Impacto da comunidade</h2>
+                            <button onclick="navigate('impact')" class="text-green-600 text-sm font-medium hover:text-green-700">
+                                Ver detalhes
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <p class="text-2xl font-bold text-gray-900">R$ ${demoImpactData.communityImpact.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                <p class="text-sm text-gray-600">total gerado</p>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold text-gray-900">${demoImpactData.familiesImpacted}</p>
+                                <p class="text-sm text-gray-600">famílias impactadas</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Security Status Footer -->
+                <div class="px-4 py-4">
+                    <div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                        <div class="flex items-center space-x-2 mb-2">
+                            ${icons.shield}
+                            <span class="font-medium text-gray-900">Status de Segurança</span>
+                        </div>
+                        <div class="text-sm text-gray-600 space-y-1">
+                            <p>🔒 Proteções ativas: Rate limiting, Validação, Detecção de anomalias</p>
+                            <p>📊 Transações/hora: ${SecurityState.transactionHistory.filter(t => t > Date.now() - 3600000).length}/${SecurityConfig.rateLimits.transactions.maxPerHour}</p>
+                            <p>⚠️ Tentativas falhas: ${SecurityState.failedAttempts}/${SecurityConfig.rateLimits.loginAttempts.maxAttempts}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderExplore() {
+            return `
+                <div class="bg-white border-b border-gray-200 sticky top-0 z-40">
+                    <div class="px-4 py-4">
+                        <div class="flex items-center space-x-3 mb-4">
+                            <button onclick="navigate('home')" class="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                                ${icons.arrowLeft}
+                            </button>
+                            <h1 class="text-xl font-bold text-gray-900">Explorar</h1>
+                        </div>
+
+                        <div class="relative">
+                            <input type="text" placeholder="Buscar estabelecimentos..." class="w-full pl-10 pr-4 py-3 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-500" />
+                            <span class="absolute left-3 top-1/2 transform -translate-y-1/2">${icons.explore}</span>
+                        </div>
+                    </div>
+
+                    <div class="px-4 pb-4">
+                        <div class="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide">
+                            <button class="flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium bg-blue-600 text-white">🏪 Todos</button>
+                            <button class="flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">☕ Cafés</button>
+                            <button class="flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">🍽️ Restaurantes</button>
+                            <button class="flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">🛒 Mercados</button>
+                            <button class="flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">🥐 Padarias</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="px-4 py-4">
+                    <p class="text-sm text-gray-500 mb-4">${demoMerchants.length} estabelecimentos encontrados</p>
+
+                    <div class="space-y-4">
+                        ${demoMerchants.map(merchant => `
+                            <div onclick="selectMerchant('${merchant.id}')" class="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-gray-100">
+                                <div class="relative">
+                                    <img src="${merchant.image}" alt="${merchant.name}" class="w-full h-48 object-cover" />
+                                    ${merchant.isSupportPoint ? `
+                                        <div class="absolute top-3 right-3">
+                                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-500 text-white">
+                                                Ponto de Apoio
+                                            </span>
+                                        </div>
+                                    ` : ''}
+                                    <div class="absolute bottom-3 left-3">
+                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${merchant.isOpen ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}">
+                                            ${merchant.isOpen ? 'Aberto' : 'Fechado'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="p-4">
+                                    <div class="flex justify-between items-start mb-2">
+                                        <h3 class="font-semibold text-gray-900">${merchant.name}</h3>
+                                        <div class="flex items-center space-x-1">
+                                            ${icons.star}
+                                            <span class="text-sm text-gray-600">4.8</span>
+                                        </div>
+                                    </div>
+
+                                    <p class="text-sm text-gray-500 capitalize mb-3">${merchant.category}</p>
+
+                                    <p class="text-sm text-gray-600 mb-3 line-clamp-2">${merchant.description}</p>
+
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center space-x-4 text-sm text-gray-500">
+                                            <div class="flex items-center space-x-1">
+                                                ${icons.mapPin}
+                                                <span>${merchant.distance}</span>
+                                            </div>
+                                            <div class="flex items-center space-x-1">
+                                                ${icons.clock}
+                                                <span>${merchant.hours}</span>
+                                            </div>
+                                        </div>
+                                        <span class="text-sm font-medium text-green-600">${merchant.benefit}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderMerchantDetail() {
+            const merchant = demoMerchants.find(m => m.id === selectedMerchant);
+            if (!merchant) return renderExplore();
+
+            const merchantOffers = demoOffers.filter(o => o.merchantId === selectedMerchant);
+
+            return `
+                <div class="relative">
+                    <img src="${merchant.image}" alt="${merchant.name}" class="w-full h-64 object-cover" />
+                    <button onclick="navigate('explore')" class="absolute top-4 left-4 p-2 bg-white/90 backdrop-blur-sm rounded-full hover:bg-white transition-colors">
+                        ${icons.arrowLeft}
+                    </button>
+                    ${merchant.isSupportPoint ? `
+                        <div class="absolute top-4 right-4">
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-500 text-white">
+                                Ponto de Apoio
+                            </span>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <div class="px-4 py-6 -mt-6 relative">
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
+                        <div class="flex justify-between items-start mb-3">
+                            <h1 class="text-2xl font-bold text-gray-900">${merchant.name}</h1>
+                            <div class="flex items-center space-x-1">
+                                ${icons.star}
+                                <span class="font-medium text-gray-900">4.8</span>
+                            </div>
+                        </div>
+
+                        <p class="text-gray-500 capitalize mb-4">${merchant.category}</p>
+
+                        <p class="text-gray-600 mb-4">${merchant.description}</p>
+
+                        <div class="flex items-center space-x-4 text-sm text-gray-500 mb-4">
+                            <div class="flex items-center space-x-1">
+                                ${icons.mapPin}
+                                <span>${merchant.distance}</span>
+                            </div>
+                            <div class="flex items-center space-x-1">
+                                ${icons.clock}
+                                <span>${merchant.hours}</span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between pt-4 border-t border-gray-100">
+                            <span class="text-green-600 font-medium">${merchant.benefit}</span>
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${merchant.isOpen ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                ${merchant.isOpen ? 'Aberto agora' : 'Fechado'}
+                            </span>
+                        </div>
+                    </div>
+
+                    ${merchantOffers.length > 0 ? `
+                        <div class="mb-6">
+                            <h2 class="text-lg font-semibold text-gray-900 mb-4">Ofertas disponíveis</h2>
+                            <div class="space-y-3">
+                                ${merchantOffers.map(offer => `
+                                    <div onclick="makeTransaction('${merchant.id}', ${offer.finalPrice}, ${offer.cashback})" class="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100 cursor-pointer">
+                                        <div class="flex justify-between items-start mb-2">
+                                            <h3 class="font-medium text-gray-900">${offer.title}</h3>
+                                            <span class="text-green-600 font-bold">-${offer.discount}%</span>
+                                        </div>
+                                        <p class="text-sm text-gray-500 mb-3">${offer.description}</p>
+                                        <div class="flex items-center justify-between">
+                                            <div>
+                                                <span class="text-gray-400 line-through text-sm">R$ ${offer.originalPrice.toFixed(2)}</span>
+                                                <span class="text-xl font-bold text-gray-900 ml-2">R$ ${offer.finalPrice.toFixed(2)}</span>
+                                            </div>
+                                            <div class="flex items-center space-x-1 text-blue-600">
+                                                <span class="text-sm font-medium">${offer.cashback}% cashback</span>
+                                                ${icons.arrowRight}
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <div class="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100 cursor-pointer" onclick="makeTransaction('${merchant.id}', 50, ${merchant.cashback})">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="font-medium text-gray-900">Compra regular</h3>
+                                <p class="text-sm text-gray-500">Use seu saldo normalmente</p>
+                            </div>
+                            <div class="flex items-center space-x-1 text-blue-600">
+                                <span class="text-sm font-medium">${merchant.cashback}% cashback</span>
+                                ${icons.arrowRight}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Security Status -->
+                    <div class="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+                        <div class="flex items-start space-x-3">
+                            ${icons.shield}
+                            <div class="flex-1">
+                                <h4 class="font-medium text-gray-900 mb-2">Status de Segurança</h4>
+                                <div class="text-sm text-gray-600 space-y-1">
+                                    <p>🔒 Proteções ativas: Validação, Rate limiting, Detecção de anomalias</p>
+                                    <p>📊 Transações recentes: ${SecurityState.transactionHistory.filter(t => t > Date.now() - 3600000).length}/${SecurityConfig.rateLimits.transactions.maxPerHour} (última hora)</p>
+                                    <p>⏱️ Cooldown: ${SecurityState.lastTransactionTime ? Math.max(0, SecurityConfig.rateLimits.transactions.cooldownMs - (Date.now() - SecurityState.lastTransactionTime)) / 1000 : 0}s restantes</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderImpact() {
+            return `
+                <div class="bg-gradient-to-r from-green-600 to-emerald-600 text-white p-6 rounded-b-3xl">
+                    <div class="flex items-center space-x-3 mb-6">
+                        <button onclick="navigate('home')" class="p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-colors">
+                            ${icons.arrowLeft}
+                        </button>
+                        <h1 class="text-2xl font-bold">Impacto Social</h1>
+                    </div>
+
+                    <div class="text-center mb-6">
+                        <p class="text-green-100 text-sm mb-2">Seu impacto pessoal</p>
+                        <div class="flex items-baseline justify-center space-x-2">
+                            <span class="text-4xl font-bold">R$ ${demoImpactData.myImpact.toFixed(2)}</span>
+                        </div>
+                        <p class="text-green-100 text-sm mt-1">gerados através do consumo local</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+                            ${icons.users}
+                            <p class="text-2xl font-bold">${demoImpactData.familiesImpacted}</p>
+                            <p class="text-green-200 text-sm">famílias impactadas</p>
+                        </div>
+
+                        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+                            ${icons.trendingUp}
+                            <p class="text-2xl font-bold">Nível 3</p>
+                            <p class="text-green-200 text-sm">contribuição</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="px-4 py-6">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Impacto da comunidade</h2>
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
+                        <div class="text-center mb-4">
+                            <p class="text-3xl font-bold text-gray-900">R$ ${demoImpactData.communityImpact.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            <p class="text-gray-500 text-sm">total gerado em Moema</p>
+                        </div>
+
+                        <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+                            <p class="text-sm text-green-800">
+                                <strong>Dados demonstrativos do MVP:</strong> Os valores apresentados são simulados para demonstrar o funcionamento do sistema de impacto social.
+                            </p>
+                        </div>
+                    </div>
+
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Categorias de impacto</h2>
+                    <div class="space-y-3">
+                        ${demoImpactData.categories.map(category => `
+                            <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="font-medium text-gray-900">${category.name}</span>
+                                    <span class="text-sm text-gray-600">R$ ${category.amount.toFixed(2)}</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                    <div class="bg-green-500 h-2 rounded-full transition-all duration-500" style="width: ${category.percentage}%"></div>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1">${category.percentage}% do total</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSafety() {
+            return `
+                <div class="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-6 rounded-b-3xl">
+                    <div class="flex items-center space-x-3 mb-6">
+                        <button onclick="navigate('home')" class="p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-colors">
+                            ${icons.arrowLeft}
+                        </button>
+                        <h1 class="text-2xl font-bold">Segurança no Território</h1>
+                    </div>
+
+                    <div class="flex items-center space-x-2 text-blue-200 mb-4">
+                        ${icons.shield}
+                        <p class="text-sm">Mapa de segurança e pontos de apoio</p>
+                    </div>
+
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                        <p class="text-sm text-yellow-800">
+                            <strong>Dados demonstrativos do MVP:</strong> As informações apresentadas são simuladas para fins de demonstração. Este sistema não prevê crimes e não afirma que regiões são absolutamente seguras ou perigosas.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="px-4 py-6">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Mapa do Território</h2>
+                    <div class="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100 mb-6">
+                        <div class="relative h-64 bg-gradient-to-br from-blue-50 to-green-50 flex items-center justify-center">
+                            <div class="text-center">
+                                <div class="text-6xl mb-4">🗺️</div>
+                                <p class="text-gray-600">Mapa demonstrativo de Moema</p>
+                                <div class="flex justify-center space-x-4 mt-4 text-sm">
+                                    <div class="flex items-center space-x-1">
+                                        <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                                        <span>Baixo risco</span>
+                                    </div>
+                                    <div class="flex items-center space-x-1">
+                                        <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                                        <span>Atenção</span>
+                                    </div>
+                                    <div class="flex items-center space-x-1">
+                                        <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+                                        <span>Ponto de Apoio</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Áreas de Atenção</h2>
+                    <div class="space-y-3 mb-6">
+                        ${demoSafetyAreas.map(area => `
+                            <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                                <div class="flex items-start justify-between mb-2">
+                                    <div class="flex items-center space-x-2">
+                                        ${icons.mapPin}
+                                        <span class="font-medium text-gray-900">${area.name}</span>
+                                    </div>
+                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${area.riskLevel === 'low' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+                                        ${area.riskLevel === 'low' ? 'Baixo risco' : 'Atenção'}
+                                    </span>
+                                </div>
+                                <div class="flex items-center space-x-2 text-sm text-gray-500">
+                                    ${icons.alertTriangle}
+                                    <span>${area.incidents} incidentes registrados (últimas 24h)</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Pontos de Apoio Multiverse</h2>
+                    <div class="space-y-3">
+                        ${demoSupportPoints.map((point, index) => `
+                            <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                                <div class="flex items-start justify-between mb-2">
+                                    <div class="flex items-center space-x-3">
+                                        <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                            <span class="text-blue-600 font-bold text-sm">${index + 1}</span>
+                                        </div>
+                                        <div>
+                                            <h3 class="font-medium text-gray-900">${point.name}</h3>
+                                            <p class="text-sm text-gray-500">${point.type}</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center space-x-1 text-green-600">
+                                        ${icons.checkCircle}
+                                        <span class="text-xs font-medium">Ativo</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center justify-between text-sm text-gray-500">
+                                    <div class="flex items-center space-x-1">
+                                        ${icons.mapPin}
+                                        <span>${point.distance}</span>
+                                    </div>
+                                    <span>${point.hours}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderWallet() {
+            const sortedTransactions = [...transactions].sort((a, b) =>
+                new Date(b.date).getTime() - new Date(a.date).getTime()
+            );
+
+            const formatDate = (date) => {
+                const now = new Date();
+                const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+
+                if (diffInHours < 1) return "Agora";
+                if (diffInHours < 24) return "Hoje";
+                if (diffInHours < 48) return "Ontem";
+                return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            };
+
+            return `
+                <div class="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-6 rounded-b-3xl">
+                    <div class="flex items-center space-x-3 mb-6">
+                        <button onclick="navigate('home')" class="p-2 bg-white/20 backdrop-blur-sm rounded-full hover:bg-white/30 transition-colors">
+                            ${icons.arrowLeft}
+                        </button>
+                        <h1 class="text-2xl font-bold">Carteira</h1>
+                    </div>
+
+                    <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 mb-4">
+                        <div class="flex items-center space-x-2 mb-2">
+                            ${icons.wallet}
+                            <span class="text-blue-200 text-sm">Saldo disponível</span>
+                        </div>
+                        <div class="flex items-baseline space-x-2 mb-1">
+                            <span class="text-4xl font-bold">${user.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            <span class="text-xl">MCC</span>
+                        </div>
+                        <p class="text-blue-200 text-sm">≈ R$ ${(user.balance * 10).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+                            <div class="flex items-center space-x-2 mb-2">
+                                ${icons.trendingUp}
+                                <span class="text-green-200 text-sm">Cashback total</span>
+                            </div>
+                            <p class="text-xl font-bold text-white">
+                                ${sortedTransactions.reduce((sum, t) => sum + t.cashback, 0).toFixed(2)} MCC
+                            </p>
+                        </div>
+
+                        <div class="bg-white/10 backdrop-blur-sm rounded-xl p-4">
+                            <div class="flex items-center space-x-2 mb-2">
+                                ${icons.clock}
+                                <span class="text-blue-200 text-sm">Transações</span>
+                            </div>
+                            <p class="text-xl font-bold text-white">${sortedTransactions.length}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="px-4 py-6">
+                    <div class="grid grid-cols-2 gap-3 mb-6">
+                        <button class="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100 flex items-center justify-center space-x-2">
+                            ${icons.arrowLeft}
+                            <span class="font-medium text-gray-900">Receber</span>
+                        </button>
+                        <button class="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100 flex items-center justify-center space-x-2">
+                            ${icons.arrowRight}
+                            <span class="font-medium text-gray-900">Enviar</span>
+                        </button>
+                    </div>
+
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Histórico de transações</h2>
+                    <div class="space-y-3">
+                        ${sortedTransactions.map(transaction => `
+                            <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                                <div class="flex items-start justify-between mb-2">
+                                    <div class="flex items-center space-x-3">
+                                        <div class="w-10 h-10 rounded-full flex items-center justify-center ${transaction.type === 'purchase' ? 'bg-blue-100' : 'bg-green-100'}">
+                                            ${transaction.type === 'purchase' ? icons.arrowRight : icons.arrowLeft}
+                                        </div>
+                                        <div>
+                                            <h3 class="font-medium text-gray-900">${transaction.merchantName}</h3>
+                                            <p class="text-sm text-gray-500">${formatDate(transaction.date)}</p>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="font-medium ${transaction.type === 'purchase' ? 'text-gray-900' : 'text-green-600'}">
+                                            ${transaction.type === 'purchase' ? '-' : '+'}${transaction.type === 'purchase' ? transaction.amount.toFixed(2) : transaction.cashback.toFixed(2)} MCC
+                                        </p>
+                                        ${transaction.type === 'purchase' ? `
+                                            <p class="text-xs text-green-600">+${transaction.cashback.toFixed(2)} cashback</p>
+                                        ` : ''}
+                                    </div>
+                                </div>
+
+                                ${transaction.type === 'purchase' ? `
+                                    <div class="flex items-center space-x-2 text-xs text-gray-500 pt-2 border-t border-gray-100">
+                                        ${icons.trendingUp}
+                                        <span>Impacto gerado: R$ ${transaction.impact.toFixed(2)}</span>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div class="mt-6 bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                        <p class="text-sm text-yellow-800">
+                            <strong>Dados demonstrativos do MVP:</strong> As transações exibidas são simuladas para demonstrar o funcionamento do sistema. Nenhum valor real está sendo processado.
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderNavigation() {
+            const tabs = [
+                { id: 'home', label: 'Início', icon: icons.home },
+                { id: 'explore', label: 'Explorar', icon: icons.explore },
+                { id: 'impact', label: 'Impacto', icon: icons.impact },
+                { id: 'safety', label: 'Segurança', icon: icons.safety },
+                { id: 'wallet', label: 'Carteira', icon: icons.wallet },
+            ];
+
+            return `
+                <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
+                    <div class="max-w-lg mx-auto">
+                        <div class="flex justify-around items-center h-16">
+                            ${tabs.map(tab => `
+                                <button onclick="navigate('${tab.id}')" class="flex flex-col items-center justify-center space-y-1 px-3 py-2 transition-colors ${currentView === tab.id ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}">
+                                    <span class="text-xl">${tab.icon}</span>
+                                    <span class="text-xs">${tab.label}</span>
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                </nav>
+            `;
+        }
+
+        // Navigation functions
+        function navigate(view) {
+            currentView = view;
+            selectedMerchant = null;
+            render();
+        }
+
+        function selectMerchant(merchantId) {
+            selectedMerchant = merchantId;
+            currentView = 'merchant';
+            render();
+        }
+
+        function makeTransaction(merchantId, amount, cashbackPercent) {
+            // Security validation
+            const securityValidation = validateTransactionRequest({
+                amount: amount,
+                merchantId: merchantId,
+                userId: user.id
+            });
+
+            if (!securityValidation.valid) {
+                alert(`❌ ${securityValidation.error}`);
+                recordFailedAttempt();
+                return;
+            }
+
+            if (securityValidation.suspicious) {
+                alert(`⚠️ Atividade suspeita detectada: ${securityValidation.reason}\n\nPor segurança, esta transação requer verificação adicional.`);
+                return;
+            }
+
+            if (securityValidation.requiresConfirmation) {
+                const confirmed = confirm(`⚠️ Transação de alto valor detectada!\n\nValor: R$ ${amount.toFixed(2)}\n\nDeseja confirmar esta transação?`);
+                if (!confirmed) {
+                    return;
+                }
+            }
+
+            const merchant = demoMerchants.find(m => m.id === merchantId);
+            if (!merchant) return;
+
+            const cashback = amount * (cashbackPercent / 100);
+            const impact = amount * 0.01;
+
+            // Generate secure token
+            const secureToken = generateSecureToken();
+
+            const newTransaction = {
+                id: Date.now().toString(),
+                merchantId,
+                merchantName: merchant.name,
+                amount,
+                cashback,
+                impact,
+                date: new Date(),
+                type: 'purchase',
+                securityToken: secureToken.substring(0, 8) + '...' // Store partial token
+            };
+
+            transactions.unshift(newTransaction);
+            user.balance = user.balance - amount + cashback;
+            user.impact = user.impact + impact;
+
+            // Record transaction for rate limiting
+            recordTransaction();
+
+            console.log('[SECURITY] Transação aprovada com token:', secureToken);
+
+            alert(`✅ Transação realizada com sucesso!\n\nEstabelecimento: ${merchant.name}\nValor: R$ ${amount.toFixed(2)}\nCashback: ${cashback.toFixed(2)} MCC\nImpacto: R$ ${impact.toFixed(2)}\n\nToken de segurança: ${secureToken.substring(0, 8)}...`);
+
+            currentView = 'wallet';
+            render();
+        }
+
+        function attachEventListeners() {
+            // Event listeners are attached inline via onclick attributes
+        }
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>
