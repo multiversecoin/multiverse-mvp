@@ -49,3 +49,9 @@ Thumbs.db
 *.key
 *.pem
 secrets/
+
+audio/
+rec/
+durations.json
+rec_meta.json
+*.mp4
