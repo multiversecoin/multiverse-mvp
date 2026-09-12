@@ -55,3 +55,4 @@ rec/
 durations.json
 rec_meta.json
 *.mp4
+!docs/video/*.mp4

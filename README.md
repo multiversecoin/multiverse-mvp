@@ -2,6 +2,11 @@
 
 Plataforma de economia digital territorial para Moema, São Paulo - MVP para Hackathon de Inovação e Impacto Humano.
 
+## 🎬 Vídeo de Apresentação (2 min)
+
+[docs/video/multiverse-coin-2min.mp4](docs/video/multiverse-coin-2min.mp4) — narração em pt-BR, demo do app e números de impacto.
+Para regerar o vídeo, veja [tools/video/README.md](tools/video/README.md).
+
 ## 🌟 Visão Geral
 
 A Multiverse é uma plataforma que conecta **PESSOAS + COMÉRCIO LOCAL + INTELIGÊNCIA + IMPACTO + SEGURANÇA** em um ecossistema digital territorial. O primeiro território experimental é **Moema, São Paulo**, funcionando como um laboratório para testar uma nova forma de economia local.
