@@ -3,6 +3,7 @@
 import { ArrowRight, Wallet, TrendingUp, Clock, ArrowDownLeft, ArrowUpRight } from "lucide-react"
 import { demoUser, demoTransactions } from "@/lib/data"
 import { cn } from "@/lib/utils"
+import MultiverseLogo from "./MultiverseLogo"
 
 interface WalletProps {
   onBack: () => void
@@ -27,6 +28,12 @@ export default function Wallet({ onBack }: WalletProps) {
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white pb-20">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-6 rounded-b-3xl">
+        {/* Logo Header */}
+        <div className="flex justify-center mb-4">
+          <MultiverseLogo size={50} />
+          <h2 className="text-base font-bold text-center mt-2">MULTIVERSE</h2>
+        </div>
+
         <div className="flex items-center space-x-3 mb-6">
           <button
             onClick={onBack}

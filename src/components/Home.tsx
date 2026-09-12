@@ -3,6 +3,7 @@
 import { MapPin, TrendingUp, ArrowRight, Shield, Bell } from "lucide-react"
 import { demoUser, demoMerchants, demoImpactData } from "@/lib/data"
 import { cn } from "@/lib/utils"
+import MultiverseLogo from "./MultiverseLogo"
 
 interface HomeProps {
   onNavigate: (tab: string) => void
@@ -15,6 +16,13 @@ export default function Home({ onNavigate }: HomeProps) {
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white pb-20">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white p-6 rounded-b-3xl">
+        {/* Logo Header */}
+        <div className="flex justify-center mb-6">
+          <MultiverseLogo size={60} />
+          <h2 className="text-lg font-bold text-center mt-2">MULTIVERSE</h2>
+          <p className="text-blue-200 text-xs text-center">Economia Digital Territorial</p>
+        </div>
+
         <div className="flex justify-between items-start mb-6">
           <div>
             <p className="text-blue-200 text-sm">Bem-vindo de volta</p>

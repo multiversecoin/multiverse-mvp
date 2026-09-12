@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Search, MapPin, Clock, Star, ArrowRight } from "lucide-react"
 import { demoMerchants } from "@/lib/data"
 import { cn } from "@/lib/utils"
+import MultiverseLogo from "./MultiverseLogo"
 
 interface ExploreProps {
   onMerchantSelect: (merchantId: string) => void
@@ -39,6 +40,12 @@ export default function Explore({ onMerchantSelect, onBack }: ExploreProps) {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="px-4 py-4">
+          {/* Logo Header */}
+          <div className="flex justify-center mb-4">
+            <MultiverseLogo size={40} />
+            <h2 className="text-sm font-bold text-center mt-1">MULTIVERSE</h2>
+          </div>
+
           <div className="flex items-center space-x-3 mb-4">
             <button
               onClick={onBack}
